@@ -68,6 +68,7 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </ApplicationDefinition>
+    <Compile Include="KCalibrator.cs" />
     <Compile Include="MainController.cs" />
     <Compile Include="Vector.cs" />
     <Page Include="MainWindow.xaml">

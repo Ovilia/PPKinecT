@@ -51,7 +51,7 @@ namespace PPKinecT
             this.Z = z;
         }
 
-        float Modulus()
+        public float Modulus()
         {
             return (float)Math.Sqrt((X * X) + (Y * Y) + (Z * Z));
         }
@@ -86,7 +86,7 @@ namespace PPKinecT
             this.Z = z;
         }
 
-        double Modulus()
+        public double Modulus()
         {
             return Math.Sqrt((X * X) + (Y * Y) + (Z * Z));
         }

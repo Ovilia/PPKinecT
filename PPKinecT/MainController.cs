@@ -15,11 +15,17 @@ namespace PPKinecT
         {
             status = MainStatus.Init;
 
+            kCalibrator = new KCalibrator();
+
+#if WITH_KINECT
             leftHandQueue = new Queue<Joint>();
             rightHandQueue = new Queue<Joint>();
             leftElbowQueue = new Queue<Joint>();
             rightElbowQueue = new Queue<Joint>();
+#endif
         }
+
+        private KCalibrator kCalibrator;
 
         public enum MainStatus
         {
@@ -72,7 +78,8 @@ namespace PPKinecT
             }
         }
 
-        private const int QUEUE_SIZE = 64;
+#if WITH_KINECT
+        private const int QUEUE_SIZE = 1024;
 
         /// <summary>
         /// Queue of left hand position with Kinect
@@ -170,5 +177,107 @@ namespace PPKinecT
         {
             return rightElbowQueue.Last();
         }
+
+        // tolerance of hand position used for checking if hand is stable in depth detecting
+        private const float DEPTH_HAND_TOLERANCE = 0.05f;
+        // count of hand position used for checking if hand is stable in depth detecting
+        private const int DEPTH_HAND_COUNT = 50;
+        // radius with center of right hand in depth image
+        private const int DEPTH_NEAR_RADIUS = 20;
+        // count of points in each line(top, bottom, left, right) in depth image
+        // used for get depth of area near hand
+        private const int DEPTH_NEAR_COUNT = 10;
+        // span of two neighbor points of area near hand
+        const float DEPTH_SPAN = 2.0f * DEPTH_NEAR_RADIUS / DEPTH_NEAR_COUNT;
+
+        /// <summary>
+        /// Check queue if right hand and elbow positions are stable
+        /// under the condition that status is DepthDetecting.
+        /// If is stable, the status will be changed to next after doing depth calibration.
+        /// If not, nothing will be changed.
+        /// </summary>
+        public void DoDepthDetecting(KinectSensor sensor, DepthImageFrame depthFrame)
+        {
+            if (status == MainStatus.DepthDetecting)
+            {
+                if (IsStable(rightHandQueue, DEPTH_HAND_TOLERANCE, DEPTH_HAND_COUNT))
+                {
+                    // if is stable, calibrate depth according to avg of position near hand
+                    SkeletonPoint handPoint = rightHandQueue.Last().Position;
+                    DepthImagePoint centerDepthPoint = sensor.MapSkeletonPointToDepth(
+                        handPoint, sensor.DepthStream.Format);
+                    int[] depthArr = new int[DEPTH_NEAR_COUNT * 4];
+                    int index = 0;
+                    for (int i = 0; i < DEPTH_NEAR_COUNT; ++i)
+                    {
+                        // top
+                        SkeletonPoint topSke = depthFrame.MapToSkeletonPoint(
+                            centerDepthPoint.X - DEPTH_NEAR_RADIUS + (int)(DEPTH_SPAN * i),
+                            centerDepthPoint.Y - DEPTH_NEAR_RADIUS);
+                        depthArr[index++] = depthFrame.MapFromSkeletonPoint(topSke).Depth;
+                        // bottom
+                        SkeletonPoint bottomSke = depthFrame.MapToSkeletonPoint(
+                            centerDepthPoint.X - DEPTH_NEAR_RADIUS + (int)(DEPTH_SPAN * i),
+                            centerDepthPoint.Y + DEPTH_NEAR_RADIUS);
+                        depthArr[index++] = depthFrame.MapFromSkeletonPoint(bottomSke).Depth;
+                        // left
+                        SkeletonPoint leftSke = depthFrame.MapToSkeletonPoint(
+                            centerDepthPoint.X - DEPTH_NEAR_RADIUS,
+                            centerDepthPoint.Y - DEPTH_NEAR_RADIUS + (int)(DEPTH_SPAN * i));
+                        depthArr[index++] = depthFrame.MapFromSkeletonPoint(leftSke).Depth;
+                        // right
+                        SkeletonPoint rightSke = depthFrame.MapToSkeletonPoint(
+                            centerDepthPoint.X + DEPTH_NEAR_RADIUS,
+                            centerDepthPoint.Y - DEPTH_NEAR_RADIUS + (int)(DEPTH_SPAN * i));
+                        depthArr[index++] = depthFrame.MapFromSkeletonPoint(rightSke).Depth;
+                    }
+                    // set median(rather than mean) depth of the list
+                    Array.Sort(depthArr);
+                    kCalibrator.SetDepth(depthArr[DEPTH_NEAR_COUNT / 2]);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Check if a queue has stable elements in the end part
+        /// </summary>
+        /// <param name="queue">The queue to be checked</param>
+        /// <param name="tolerance">Max difference allowed</param>
+        /// <param name="count">Count of elements in the end part</param>
+        /// <returns>If the tolerance of the end part is less than or equal to tolerance</returns>
+        private bool IsStable(Queue<Joint> queue, float tolerance, int count)
+        {
+            int qCount = queue.Count;
+            if (qCount < count)
+            {
+                // queue is not stable
+                return false;
+            }
+            SkeletonPoint lastPoint = queue.ElementAt(qCount - 1).Position;
+            for (int i = 0; i < count; ++i)
+            {
+                // point from end to front
+                if (Distance(queue.ElementAt(qCount - 1 - i).Position,
+                    lastPoint) > tolerance)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Distance of two SkeletonPoints
+        /// </summary>
+        /// <param name="point1">Point 1</param>
+        /// <param name="point2">Point 2</param>
+        /// <returns>Distance of two points</returns>
+        private float Distance(SkeletonPoint point1, SkeletonPoint point2)
+        {
+            Vector3f vector = new Vector3f(point1.X - point2.X,
+                point1.Y - point2.Y, point1.Z - point2.Z);
+            return vector.Modulus();
+        }
+#endif
     }
 }

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Timers;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -14,6 +15,7 @@ using System.Windows.Shapes;
 
 #if WITH_KINECT
 using Microsoft.Kinect;
+using System.Windows.Threading;
 #endif
 
 namespace PPKinecT
@@ -30,6 +32,16 @@ namespace PPKinecT
             InitializeComponent();
 #if WITH_KINECT
             InitializeKinect();
+
+            // Timer used for frame rate, call SecondTimeOut every second
+            //Timer timer = new Timer(1000);
+            //timer.Elapsed += new ElapsedEventHandler(SecondTimeOut);
+            //timer.AutoReset = true;
+            //timer.Enabled = true;
+            DispatcherTimer timer = new DispatcherTimer();
+            timer.Interval = TimeSpan.FromMilliseconds(1000);
+            timer.Tick += SecondTimeOut;
+            timer.Start();
 #endif
         }
 
@@ -38,9 +50,7 @@ namespace PPKinecT
 #if WITH_KINECT
         private KinectSensor sensor;
 
-        private byte[] colorBytes;
-        private Skeleton[] skeletons;
-        private int frameCount = 0;
+        private int frameCount;
 
         /// <summary>
         /// Init kinect and check if kinect is enabled
@@ -80,10 +90,14 @@ namespace PPKinecT
             sensor.SkeletonFrameReady += new EventHandler<SkeletonFrameReadyEventArgs>(SensorSkeletonFrameReady);
 
             sensor.ElevationAngle = 11;
+
+            frameCount = 0;
         }
 
         void SensorColorFrameReady(object sender, ColorImageFrameReadyEventArgs e)
         {
+            ++frameCount;
+
             // only show color frame when detecting depth or edge
             if (mainController.Status == MainController.MainStatus.DepthDetecting ||
                 mainController.Status == MainController.MainStatus.EdgeDetecting)
@@ -94,13 +108,8 @@ namespace PPKinecT
                     {
                         return;
                     }
-
-                    if (colorBytes == null ||
-                        colorBytes.Length != image.PixelDataLength)
-                    {
-                        colorBytes = new byte[image.PixelDataLength];
-                    }
-
+                    
+                    byte[] colorBytes = new byte[image.PixelDataLength];
                     image.CopyPixelDataTo(colorBytes);
 
                     // You could use PixelFormats.Bgr32 below to ignore the alpha,
@@ -125,8 +134,6 @@ namespace PPKinecT
 
         void SensorSkeletonFrameReady(object sender, SkeletonFrameReadyEventArgs e)
         {
-            ++frameCount;
-
             using (var skeletonFrame = e.OpenSkeletonFrame())
             {
                 if (skeletonFrame == null)
@@ -134,19 +141,12 @@ namespace PPKinecT
                     return;
                 }
 
-                if (skeletons == null ||
-                    skeletons.Length != skeletonFrame.SkeletonArrayLength)
-                {
-                    skeletons = new Skeleton[skeletonFrame.SkeletonArrayLength];
-                }
-
+                Skeleton[] skeletons = new Skeleton[skeletonFrame.SkeletonArrayLength];
                 skeletonFrame.CopySkeletonDataTo(skeletons);
-
                 Skeleton closestSkeleton = (from s in skeletons
                                             where s.TrackingState == SkeletonTrackingState.Tracked
                                             select s).OrderBy(s => s.Joints[JointType.HandRight].Position.Z)
                                                     .FirstOrDefault();
-
                 if (closestSkeleton == null)
                 {
                     return;
@@ -175,9 +175,9 @@ namespace PPKinecT
                         Canvas.SetTop(RightHand, rightHandScreen.Y - RightHand.Height / 2);
                         Canvas.SetLeft(RightElbow, rightElbowScreen.X - RightElbow.Width / 2);
                         Canvas.SetTop(RightElbow, rightElbowScreen.Y - RightElbow.Height / 2);
+
                         break;
                 }
-
             }
         }
 
@@ -189,7 +189,23 @@ namespace PPKinecT
                 {
                     return;
                 }
+
+                switch (mainController.Status)
+                {
+                    case MainController.MainStatus.DepthDetecting:
+                        // If is stable, the status will be changed to EdgeDetecting
+                        mainController.DoDepthDetecting(sensor, depthFrame);
+                        break;
+                }
             }
+        }
+
+        //private void SecondTimeOut(object source, ElapsedEventArgs e)
+        private void SecondTimeOut(object source, EventArgs e)
+        {
+            frameRate.Text = "Frame rate: " + frameCount;
+            //MessageBox.Show(frameCount.ToString());
+            frameCount = 0;
         }
 #endif
     }
