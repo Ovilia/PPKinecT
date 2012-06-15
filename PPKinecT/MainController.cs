@@ -5,17 +5,19 @@ using System.Text;
 
 #if WITH_KINECT
 using Microsoft.Kinect;
+using System.Windows.Threading;
 #endif
 
 namespace PPKinecT
 {
     class MainController
     {
-        public MainController()
+        public MainController(MainWindow mainWindow)
         {
-            status = MainStatus.Init;
+            Status = MainStatus.Init;
 
             kCalibrator = new KCalibrator();
+            this.mainWindow = mainWindow;
 
 #if WITH_KINECT
             leftHandQueue = new Queue<Joint>();
@@ -23,9 +25,12 @@ namespace PPKinecT
             leftElbowQueue = new Queue<Joint>();
             rightElbowQueue = new Queue<Joint>();
 #endif
+
+            edgeCooling = false;
         }
 
         private KCalibrator kCalibrator;
+        private MainWindow mainWindow;
 
         public enum MainStatus
         {
@@ -37,45 +42,10 @@ namespace PPKinecT
             PptPresenting,
             Complete
         };
-        private MainStatus status;
         public MainStatus Status
         {
-            get
-            {
-                return status;
-            }
-        }
-        public void ToNextState()
-        {
-            switch (status)
-            {
-                case MainStatus.Init:
-                    status = MainStatus.KinectDetecting;
-                    break;
-
-                case MainStatus.KinectDetecting:
-                    status = MainStatus.DepthDetecting;
-                    break;
-
-                case MainStatus.DepthDetecting:
-                    status = MainStatus.EdgeDetecting;
-                    break;
-
-                case MainStatus.EdgeDetecting:
-                    status = MainStatus.PptWaiting;
-                    break;
-
-                case MainStatus.PptWaiting:
-                    status = MainStatus.PptPresenting;
-                    break;
-
-                case MainStatus.PptPresenting:
-                    status = MainStatus.Complete;
-                    break;
-
-                case MainStatus.Complete:
-                    break;
-            }
+            get;
+            set;
         }
 
 #if WITH_KINECT
@@ -192,13 +162,13 @@ namespace PPKinecT
 
         /// <summary>
         /// Check queue if right hand and elbow positions are stable
-        /// under the condition that status is DepthDetecting.
-        /// If is stable, the status will be changed to next after doing depth calibration.
+        /// under the condition that Status is DepthDetecting.
+        /// If is stable, the Status will be changed to next after doing depth calibration.
         /// If not, nothing will be changed.
         /// </summary>
         public void DoDepthDetecting(KinectSensor sensor, DepthImageFrame depthFrame)
         {
-            if (status == MainStatus.DepthDetecting)
+            if (Status == MainStatus.DepthDetecting)
             {
                 if (IsStable(rightHandQueue, DEPTH_HAND_TOLERANCE, DEPTH_HAND_COUNT))
                 {
@@ -234,8 +204,58 @@ namespace PPKinecT
                     // set median(rather than mean) depth of the list
                     Array.Sort(depthArr);
                     kCalibrator.SetDepth(depthArr[DEPTH_NEAR_COUNT / 2]);
+
+                    Status = MainStatus.EdgeDetecting;
+                    mainWindow.textBlock.Text = "Detecting edge now. Arm at four corners of the screen.";
+                    // cooling time timer
+                    DispatcherTimer timer = new DispatcherTimer();
+                    timer.Interval = TimeSpan.FromMilliseconds(COOLING_TIME);
+                    timer.Tick += EdgeCoolingTimeOut;
+                    timer.Start();
+                    edgeCooling = true;
                 }
             }
+        }
+
+        // tolerance in edge detecting
+        private const float EDGE_TOLERANCE = 0.05f;
+        private const int EDGE_COUNT = 50;
+        private const int COOLING_TIME = 5000;
+        private bool edgeCooling;
+        public void DoEdgeDetecting()
+        {
+            if (Status == MainStatus.EdgeDetecting && !edgeCooling)
+            {
+                if (IsStable(rightHandQueue, EDGE_TOLERANCE, EDGE_COUNT) &&
+                    IsStable(rightElbowQueue, EDGE_TOLERANCE, EDGE_COUNT))
+                {
+                    SkeletonPoint handPoint = rightHandQueue.Last().Position;
+                    Vector3f handVec = new Vector3f(handPoint.X, handPoint.Y, handPoint.Z);                    
+                    SkeletonPoint elbowPoint = rightElbowQueue.Last().Position;
+                    Vector3f elbowVec = new Vector3f(elbowPoint.X, elbowPoint.Y, elbowPoint.Z);
+                    if (kCalibrator.SetScreenPosition(handVec, elbowVec))
+                    {
+                        // all screen position setted
+                        Status = MainStatus.PptWaiting;
+                    }
+                    else
+                    {
+                        mainWindow.textBlock.Text = "Detecting another edge.";
+                        // point to another screen edge, using cooling time to prevent pointing to the same point
+                        DispatcherTimer timer = new DispatcherTimer();
+                        timer.Interval = TimeSpan.FromMilliseconds(COOLING_TIME);
+                        timer.Tick += EdgeCoolingTimeOut;
+                        timer.Start();
+                        edgeCooling = true;
+                    }
+                }
+            }
+        }
+        private void EdgeCoolingTimeOut(object source, EventArgs e)
+        {
+            edgeCooling = false;
+            mainWindow.textBlock.Text = "Detecting edge now. Please arm your right hand and elbow" +
+                " at four corners of the screen.";
         }
 
         /// <summary>

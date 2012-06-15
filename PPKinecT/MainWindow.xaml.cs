@@ -27,17 +27,12 @@ namespace PPKinecT
     {
         public MainWindow()
         {
-            mainController = new MainController();
+            mainController = new MainController(this);
 
             InitializeComponent();
 #if WITH_KINECT
             InitializeKinect();
 
-            // Timer used for frame rate, call SecondTimeOut every second
-            //Timer timer = new Timer(1000);
-            //timer.Elapsed += new ElapsedEventHandler(SecondTimeOut);
-            //timer.AutoReset = true;
-            //timer.Enabled = true;
             DispatcherTimer timer = new DispatcherTimer();
             timer.Interval = TimeSpan.FromMilliseconds(1000);
             timer.Tick += SecondTimeOut;
@@ -62,7 +57,7 @@ namespace PPKinecT
                 return;
             }
             // Change to KinectDetecting
-            mainController.ToNextState();
+            mainController.Status = MainController.MainStatus.KinectDetecting;
 
             sensor = KinectSensor.KinectSensors.FirstOrDefault();
             while (sensor == null)
@@ -77,7 +72,7 @@ namespace PPKinecT
                 sensor = KinectSensor.KinectSensors.FirstOrDefault();
             }
             // Kinect detected, change to next status
-            mainController.ToNextState();
+            mainController.Status = MainController.MainStatus.DepthDetecting;
 
             sensor.Start();
 
@@ -157,27 +152,27 @@ namespace PPKinecT
 
                 switch (mainController.Status)
                 {
-                    case MainController.MainStatus.DepthDetecting:
-                        Joint rightHand = mainController.LastRightHand();
-                        Joint rightElbow = mainController.LastRightElbow();
-                        if (rightHand == null || rightElbow == null)
-                        {
-                            return;
-                        }
-                        // position of the screen
-                        ColorImagePoint rightHandScreen = sensor.MapSkeletonPointToColor(
-                            rightHand.Position, sensor.ColorStream.Format);
-                        ColorImagePoint rightElbowScreen = sensor.MapSkeletonPointToColor(
-                            rightElbow.Position, sensor.ColorStream.Format);
-
-                        // Change circle position in canvas
-                        Canvas.SetLeft(RightHand, rightHandScreen.X - RightHand.Width / 2);
-                        Canvas.SetTop(RightHand, rightHandScreen.Y - RightHand.Height / 2);
-                        Canvas.SetLeft(RightElbow, rightElbowScreen.X - RightElbow.Width / 2);
-                        Canvas.SetTop(RightElbow, rightElbowScreen.Y - RightElbow.Height / 2);
-
+                    case MainController.MainStatus.EdgeDetecting:
+                        mainController.DoEdgeDetecting();
                         break;
                 }
+
+                Joint rightHand = mainController.LastRightHand();
+                Joint rightElbow = mainController.LastRightElbow();
+                if (rightHand == null || rightElbow == null)
+                {
+                    return;
+                }
+                // position of the screen
+                ColorImagePoint rightHandScreen = sensor.MapSkeletonPointToColor(
+                    rightHand.Position, sensor.ColorStream.Format);
+                ColorImagePoint rightElbowScreen = sensor.MapSkeletonPointToColor(
+                    rightElbow.Position, sensor.ColorStream.Format);
+                // Change circle position in canvas
+                Canvas.SetLeft(RightHand, rightHandScreen.X - RightHand.Width / 2);
+                Canvas.SetTop(RightHand, rightHandScreen.Y - RightHand.Height / 2);
+                Canvas.SetLeft(RightElbow, rightElbowScreen.X - RightElbow.Width / 2);
+                Canvas.SetTop(RightElbow, rightElbowScreen.Y - RightElbow.Height / 2);
             }
         }
 
@@ -200,11 +195,9 @@ namespace PPKinecT
             }
         }
 
-        //private void SecondTimeOut(object source, ElapsedEventArgs e)
         private void SecondTimeOut(object source, EventArgs e)
         {
             frameRate.Text = "Frame rate: " + frameCount;
-            //MessageBox.Show(frameCount.ToString());
             frameCount = 0;
         }
 #endif
