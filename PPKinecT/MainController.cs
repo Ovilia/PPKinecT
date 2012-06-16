@@ -2,10 +2,10 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Windows.Threading;
 
 #if WITH_KINECT
 using Microsoft.Kinect;
-using System.Windows.Threading;
 #endif
 
 namespace PPKinecT
@@ -19,18 +19,32 @@ namespace PPKinecT
             kCalibrator = new KCalibrator();
             this.mainWindow = mainWindow;
 
+            pptCtrl = new PPTController();            
+            pptDetectTimer = new DispatcherTimer();
+            pptDetectTimer.Interval = TimeSpan.FromMilliseconds(1000);
+            pptDetectTimer.Tick += PptDetectTimeOut;            
+
+            ReadPreferenceFile("preference.txt");
+
 #if WITH_KINECT
             leftHandQueue = new Queue<Joint>();
             rightHandQueue = new Queue<Joint>();
             leftElbowQueue = new Queue<Joint>();
             rightElbowQueue = new Queue<Joint>();
-#endif
 
             edgeCooling = false;
+#else
+            Status = MainStatus.PptWaiting;
+            pptDetectTimer.Start();
+#endif
         }
 
         private KCalibrator kCalibrator;
         private MainWindow mainWindow;
+
+        private PPTController pptCtrl;
+        private String pptProcessName;
+        DispatcherTimer pptDetectTimer;
 
         public enum MainStatus
         {
@@ -236,7 +250,8 @@ namespace PPKinecT
                     if (kCalibrator.SetScreenPosition(handVec, elbowVec))
                     {
                         // all screen position setted
-                        Status = MainStatus.PptWaiting;
+                        Status = MainStatus.PptWaiting;        
+                        pptDetectTimer.Start();
                     }
                     else
                     {
@@ -258,6 +273,39 @@ namespace PPKinecT
                 " at four corners of the screen.";
         }
 
+#endif
+        public void DoPptDetecting()
+        {
+            if (Status == MainStatus.PptWaiting)
+            {
+                System.Diagnostics.Process[] processList = System.Diagnostics.Process.GetProcesses();
+                foreach (System.Diagnostics.Process process in processList)
+                {
+                    if (process.ProcessName == pptProcessName)
+                    {
+                        // ppt detected
+                        Status = MainStatus.PptPresenting;
+                        return;
+                    }
+                }
+            }
+        }
+
+#if _WITH_KINECT
+        // temp used to check ppt 
+        private void PptDetectTimeOut(object source, EventArgs e)
+        {
+            Console.WriteLine("check");
+            DoPptDetecting();
+            if (Status != MainStatus.PptWaiting)
+            {
+                // status changed
+                pptDetectTimer.Stop();
+            }
+        }
+#endif
+
+#if WITH_KINECT
         /// <summary>
         /// Check if a queue has stable elements in the end part
         /// </summary>
@@ -299,5 +347,28 @@ namespace PPKinecT
             return vector.Modulus();
         }
 #endif
+
+        private bool ReadPreferenceFile(String fileName)
+        {
+            try
+            {
+                System.IO.StreamReader file = new System.IO.StreamReader(fileName);
+                String line;
+                while ((line = file.ReadLine()) != null)
+                {
+                    if (line.StartsWith("process_name"))
+                    {
+                        pptProcessName = line.Substring(line.IndexOf("=") + 1).Trim();
+                    }
+                }
+                file.Close();
+                return true;
+            }
+            catch (System.IO.FileNotFoundException ex)
+            {
+                System.Windows.MessageBox.Show("File " + fileName + " not found");
+                return false;
+            }
+        }
     }
 }
