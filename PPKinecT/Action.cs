@@ -12,7 +12,7 @@ namespace PPKinecT
 {
     class Action
     {
-        enum ActionType
+        public enum ActionType
         {
             NONE,
             LEFT,
@@ -31,12 +31,14 @@ namespace PPKinecT
         /// Calculating match by multiplying similarity and count of points checked.
         /// </summary>
         /// <param name="joint">Array of joint positions, smaller index means former position</param>
+        /// <param name="leaseCnt">Least amount of positions to be checked</param>
+        /// <param name="similarity">Similarity of matched action</param>
         /// <returns>Most matched action type</returns>
-        public static ActionType MatchedAction(Joint[] joint)
+        public static ActionType MatchedAction(Joint[] joint, int leaseCnt, out float similarity)
         {
             float maxSimi = 0.0f;
             ActionType maxType = ActionType.NONE;
-            for (int i = 1; i < joint.Length; ++i)
+            for (int i = leaseCnt; i < joint.Length; ++i)
             {
                 for (int j = 0; j < 8; ++j)
                 {
@@ -49,7 +51,8 @@ namespace PPKinecT
                     }
                 }
             }
-            if (maxSimi > 0.5)
+            similarity = maxSimi;
+            if (maxSimi > 0.25f)
             {
                 return maxType;
             }

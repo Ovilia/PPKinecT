@@ -7,11 +7,16 @@ namespace PPKinecT
 {
     class KCalibrator
     {
-        public KCalibrator()
+        public KCalibrator(int screenWidth, int screenHeight)
         {
             screenKDistance = 0;
             screenSetted = 0;
+            this.screenWidth = screenWidth;
+            this.screenHeight = screenHeight;
         }
+
+        private int screenWidth;
+        private int screenHeight;
         
         private int screenKDistance;
         /// <summary>
@@ -93,5 +98,29 @@ namespace PPKinecT
                 return true;
             }
         }
+
+        /// <summary>
+        /// Check if one hand is pointing to screen
+        /// </summary>
+        /// <param name="hand">Hand position in depth frame</param>
+        /// <param name="elbow">Elbow position in depth frame</param>
+        /// <param name="xPos">Pointed x position on screen</param>
+        /// <param name="yPos">Pointed y position on screen</param>
+        /// <returns>If is pointed to screen</returns>
+        public bool PointScreenPosition(Vector3f hand, Vector3f elbow, out int xPos, out int yPos)
+        {
+            Vector2f position = ArmToScreen(hand, elbow);
+            xPos = (int)((position.X - screenLeft) / (screenRight - screenLeft) * screenWidth);
+            yPos = (int)((screenTop - position.Y) / (screenTop - screenTop) * screenHeight);
+            if (xPos < 0 || xPos > screenWidth || yPos < 0 || yPos > screenHeight)
+            {
+                return false;
+            }
+            else
+            {
+                return true;
+            }
+        }
+
     }
 }

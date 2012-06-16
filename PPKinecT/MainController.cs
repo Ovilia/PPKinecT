@@ -16,15 +16,26 @@ namespace PPKinecT
         {
             Status = MainStatus.Init;
 
-            kCalibrator = new KCalibrator();
             this.mainWindow = mainWindow;
+            screenWidth = 1024;
+            screenHeight = 800;
 
-            pptCtrl = new PPTController();            
+            pptCtrl = new PPTController();
             pptDetectTimer = new DispatcherTimer();
             pptDetectTimer.Interval = TimeSpan.FromMilliseconds(1000);
-            pptDetectTimer.Tick += PptDetectTimeOut;            
+            pptDetectTimer.Tick += PptDetectTimeOut;
+
+            edgeTimer = new DispatcherTimer();
+            edgeTimer.Interval = TimeSpan.FromMilliseconds(1000);
+            edgeTimer.Tick += EdgeCoolingTimeOut;
+
+            clickTimer = new DispatcherTimer();
+            clickTimer.Interval = TimeSpan.FromMilliseconds(5000);
+            clickTimer.Tick += ClickTimerOut;
 
             ReadPreferenceFile("preference.txt");
+
+            kCalibrator = new KCalibrator(screenWidth, screenHeight);
 
 #if WITH_KINECT
             leftHandQueue = new Queue<Joint>();
@@ -33,6 +44,9 @@ namespace PPKinecT
             rightElbowQueue = new Queue<Joint>();
 
             edgeCooling = false;
+            clickCooling = false;
+
+            isZoomed = false;
 #else
             Status = MainStatus.PptWaiting;
             pptDetectTimer.Start();
@@ -41,10 +55,18 @@ namespace PPKinecT
 
         private KCalibrator kCalibrator;
         private MainWindow mainWindow;
+        private int screenWidth;
+        private int screenHeight;
+
+        private DispatcherTimer edgeTimer;
 
         private PPTController pptCtrl;
         private String pptProcessName;
-        DispatcherTimer pptDetectTimer;
+        private DispatcherTimer pptDetectTimer;
+
+        private DispatcherTimer clickTimer;
+
+        private bool isZoomed;
 
         public enum MainStatus
         {
@@ -69,21 +91,25 @@ namespace PPKinecT
         /// Queue of left hand position with Kinect
         /// </summary>
         private Queue<Joint> leftHandQueue;
+        private Joint lastLeftHand;
 
         /// <summary>
         /// Queue of right hand position with Kinect
         /// </summary>
         private Queue<Joint> rightHandQueue;
+        private Joint lastRightHand;
 
         /// <summary>
         /// Queue of left elbow position with Kinect
         /// </summary>
         private Queue<Joint> leftElbowQueue;
+        private Joint lastLeftElbow;
 
         /// <summary>
         /// Queue of right elbow position with Kinect
         /// </summary>
         private Queue<Joint> rightElbowQueue;
+        private Joint lastRightElbow;
 
         /// <summary>
         /// Enqueue usable position of joints of current frame,
@@ -94,6 +120,7 @@ namespace PPKinecT
         {
             if (jointCollection[JointType.HandLeft].TrackingState != JointTrackingState.NotTracked)
             {
+                lastLeftHand = jointCollection[JointType.HandLeft];
                 leftHandQueue.Enqueue(jointCollection[JointType.HandLeft]);
                 if (leftHandQueue.Count > QUEUE_SIZE)
                 {
@@ -102,6 +129,7 @@ namespace PPKinecT
             }
             if (jointCollection[JointType.HandRight].TrackingState != JointTrackingState.NotTracked)
             {
+                lastRightHand = jointCollection[JointType.HandRight];
                 rightHandQueue.Enqueue(jointCollection[JointType.HandRight]);
                 if (rightHandQueue.Count > QUEUE_SIZE)
                 {
@@ -110,6 +138,7 @@ namespace PPKinecT
             }
             if (jointCollection[JointType.ElbowLeft].TrackingState != JointTrackingState.NotTracked)
             {
+                lastLeftElbow = jointCollection[JointType.ElbowLeft];
                 leftElbowQueue.Enqueue(jointCollection[JointType.ElbowLeft]);
                 if (leftElbowQueue.Count > QUEUE_SIZE)
                 {
@@ -118,6 +147,7 @@ namespace PPKinecT
             }
             if (jointCollection[JointType.ElbowRight].TrackingState != JointTrackingState.NotTracked)
             {
+                LastRightElbow = jointCollection[JointType.ElbowRight];
                 rightElbowQueue.Enqueue(jointCollection[JointType.ElbowRight]);
                 if (rightElbowQueue.Count > QUEUE_SIZE)
                 {
@@ -257,10 +287,7 @@ namespace PPKinecT
                     {
                         mainWindow.textBlock.Text = "Detecting another edge.";
                         // point to another screen edge, using cooling time to prevent pointing to the same point
-                        DispatcherTimer timer = new DispatcherTimer();
-                        timer.Interval = TimeSpan.FromMilliseconds(COOLING_TIME);
-                        timer.Tick += EdgeCoolingTimeOut;
-                        timer.Start();
+                        edgeTimer.Start();
                         edgeCooling = true;
                     }
                 }
@@ -271,6 +298,7 @@ namespace PPKinecT
             edgeCooling = false;
             mainWindow.textBlock.Text = "Detecting edge now. Please arm your right hand and elbow" +
                 " at four corners of the screen.";
+            edgeTimer.Stop();
         }
 
 #endif
@@ -291,7 +319,6 @@ namespace PPKinecT
             }
         }
 
-#if _WITH_KINECT
         // temp used to check ppt 
         private void PptDetectTimeOut(object source, EventArgs e)
         {
@@ -303,9 +330,110 @@ namespace PPKinecT
                 pptDetectTimer.Stop();
             }
         }
-#endif
+
+        private const int LEFT_HAND_MATCH_CNT = 20;
+        private const int RIGHT_HAND_MATCH_CNT = 15;
+        private const float RIGHT_HAND_LEFT_CONFIDENCE = 0.7f;
+        private const float RIGHT_HAND_RIGHT_CONFIDENCE = 0.6f;
+        private const float BOTH_HANDS_CONFIDENCE = 0.8f;
+
+        private const float CLICK_TOLERANCE = 0.05f;
+        private const int CLICK_CHECK_COUNT = 30;
+        private bool clickCooling;
+
+        private int lastXPoint = -1;
+        private int lastYPoint = -1;
+        public void DoPptPresenting()
+        {
+            if (Status == MainStatus.PptPresenting)
+            {
+                pptCtrl.RemoveMark();
+                // check if is pointed to screen
+                int xPos = -1, yPos = -1;
+                bool isPointed = kCalibrator.PointScreenPosition(lastRightHand, lastRightElbow, out xPos, out yPos);
+                if (isPointed)
+                {
+                    pptCtrl.ShowMark(xPos, yPos);
+                    if (isZoomed)
+                    {
+                        // move zoomed screen
+                        if (lastXPoint != -1 && lastYPoint != -1)
+                        {
+                            pptCtrl.MoveScreen(xPos, yPos);
+                        }
+                        lastXPoint = xPos;
+                        lastYPoint = yPos;
+                    }
+                    else
+                    {
+                        if (!clickCooling && IsStable(rightHandQueue, CLICK_TOLERANCE, CLICK_CHECK_COUNT))
+                        {
+                            // click hypertext
+                            pptCtrl.Click(xPos, yPos);
+                            clickCooling = true;
+                            clickTimer.Start();
+                        }
+                    }
+                }
+                else
+                {
+                    lastXPoint = -1;
+                    lastYPoint = -1;
+                    DoActionMatching();
+                }
+            }
+        }
+
+        // temp used to check ppt 
+        private void ClickTimeOut(object source, EventArgs e)
+        {
+            clickCooling = false;
+            clickTimer.Stop();
+        }
 
 #if WITH_KINECT
+        private void DoActionMatching()
+        {
+            float rightSimi = 0.0f;
+            // right hand
+            Joint[] rightHand = rightHandQueue.ToArray();
+            Action.ActionType rightType = Action.MatchedAction(rightHand, RIGHT_HAND_MATCH_CNT, out rightSimi);
+            if (rightType == Action.ActionType.RIGHT && rightSimi > RIGHT_HAND_LEFT_CONFIDENCE)
+            {
+                // right-hand turn left
+                pptCtrl.ToPreviousPage();
+                return;
+            }
+            else if (rightType == Action.ActionType.LEFT && rightSimi > RIGHT_HAND_RIGHT_CONFIDENCE)
+            {
+                // right-hand turn right
+                pptCtrl.ToNextPage();
+            }
+            else if (rightType == Action.ActionType.LEFT_DOWN || rightType == Action.ActionType.LEFT_UP ||
+                rightType == Action.ActionType.RIGHT_DOWN || rightType == Action.ActionType.RIGHT_UP)
+            {
+                // left hand
+                float leftSimi = 0.0f;
+                Joint[] leftHand = leftHandQueue.ToArray();
+                Action.ActionType leftType = Action.MatchedAction(rightHand, RIGHT_HAND_MATCH_CNT, out leftSimi);
+                if (leftSimi > BOTH_HANDS_CONFIDENCE && rightSimi > BOTH_HANDS_CONFIDENCE)
+                {
+                    if (leftType == Action.ActionType.LEFT_UP && rightType == Action.ActionType.RIGHT_DOWN)
+                    {
+                        // left hand turn left-up, right hand turn right-down
+                        pptCtrl.ZoomIn();
+                        isZoomed = true;
+                    }
+                    else if (leftType == Action.ActionType.RIGHT_DOWN && rightType == Action.ActionType.LEFT_UP)
+                    {
+                        // left hand turn right-down, right hand turn left-up
+                        pptCtrl.ZoomOut();
+                        isZoomed = pptCtrl.isZoomed();
+                    }
+                }
+            }
+        }
+
         /// <summary>
         /// Check if a queue has stable elements in the end part
         /// </summary>
@@ -360,6 +488,28 @@ namespace PPKinecT
                     {
                         pptProcessName = line.Substring(line.IndexOf("=") + 1).Trim();
                     }
+                    else if (line.StartsWith("screen_width"))
+                    {
+                        try
+                        {
+                            screenWidth = int.Parse(line.Substring(line.IndexOf("=") + 1).Trim());
+                        }
+                        catch (Exception e)
+                        {
+                            screenWidth = 1024;
+                        }
+                    }
+                    else if (line.StartsWith("screen_height"))
+                    {
+                        try
+                        {
+                            screenHeight = int.Parse(line.Substring(line.IndexOf("=") + 1).Trim());
+                        }
+                        catch (Exception e)
+                        {
+                            screenHeight = 800;
+                        }
+                    }
                 }
                 file.Close();
                 return true;
@@ -370,5 +520,7 @@ namespace PPKinecT
                 return false;
             }
         }
+
+        public EventHandler ClickTimerOut { get; set; }
     }
 }
