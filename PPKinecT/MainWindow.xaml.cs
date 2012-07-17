@@ -37,6 +37,8 @@ namespace PPKinecT
             timer.Interval = TimeSpan.FromMilliseconds(1000);
             timer.Tick += SecondTimeOut;
             timer.Start();
+
+            //mainController.tmp();
 #endif
         }
 
@@ -84,9 +86,10 @@ namespace PPKinecT
             sensor.SkeletonStream.Enable();
             sensor.SkeletonFrameReady += new EventHandler<SkeletonFrameReadyEventArgs>(SensorSkeletonFrameReady);
 
-            sensor.ElevationAngle = 11;
+            sensor.ElevationAngle = 0;
 
             frameCount = 0;
+            //mainController.Status = MainController.MainStatus.PptPresenting;
         }
 
         void SensorColorFrameReady(object sender, ColorImageFrameReadyEventArgs e)
@@ -94,9 +97,9 @@ namespace PPKinecT
             ++frameCount;
 
             // only show color frame when detecting depth or edge
-            if (mainController.Status == MainController.MainStatus.DepthDetecting ||
-                mainController.Status == MainController.MainStatus.EdgeDetecting)
-            {
+            //if (mainController.Status == MainController.MainStatus.DepthDetecting ||
+            //    mainController.Status == MainController.MainStatus.EdgeDetecting)
+            //{
                 using (var image = e.OpenColorImageFrame())
                 {
                     if (image == null)
@@ -124,7 +127,7 @@ namespace PPKinecT
                         image.Width * image.BytesPerPixel);
                     videoImage.Source = source;
                 }
-            }
+            //}
         }
 
         void SensorSkeletonFrameReady(object sender, SkeletonFrameReadyEventArgs e)
@@ -147,22 +150,28 @@ namespace PPKinecT
                     return;
                 }
 
-                // enqueue usable position of joints
-                mainController.EnqueueJoints(closestSkeleton.Joints);
-
-                switch (mainController.Status)
-                {
-                    case MainController.MainStatus.EdgeDetecting:
-                        mainController.DoEdgeDetecting();
-                        break;
-                }
-
-                Joint rightHand = mainController.LastRightHand();
-                Joint rightElbow = mainController.LastRightElbow();
+                Joint rightHand = closestSkeleton.Joints[JointType.HandRight];
+                Joint rightElbow = closestSkeleton.Joints[JointType.ShoulderRight];
                 if (rightHand == null || rightElbow == null)
                 {
                     return;
                 }
+
+                // Check if is facing screen
+                Joint head = closestSkeleton.Joints[JointType.Head];
+                Joint leftHand = closestSkeleton.Joints[JointType.HandLeft];
+                if (head != null && leftHand != null)
+                {
+                    if (head.Position.Z < rightHand.Position.Z && head.Position.Z < leftHand.Position.Z)
+                    {
+                        mainController.SetIsFaceScreen(true);
+                    }
+                    else
+                    {
+                        mainController.SetIsFaceScreen(false);
+                    }
+                }
+
                 // position of the screen
                 ColorImagePoint rightHandScreen = sensor.MapSkeletonPointToColor(
                     rightHand.Position, sensor.ColorStream.Format);
@@ -173,11 +182,29 @@ namespace PPKinecT
                 Canvas.SetTop(RightHand, rightHandScreen.Y - RightHand.Height / 2);
                 Canvas.SetLeft(RightElbow, rightElbowScreen.X - RightElbow.Width / 2);
                 Canvas.SetTop(RightElbow, rightElbowScreen.Y - RightElbow.Height / 2);
+
+                // enqueue usable position of joints
+                mainController.EnqueueJoints(closestSkeleton.Joints);
+
+                switch (mainController.Status)
+                {
+                    case MainController.MainStatus.EdgeDetecting:
+                        mainController.DoEdgeDetecting();
+                        break;
+
+                    case MainController.MainStatus.PptPresenting:
+                        mainController.DoPptPresenting();
+                        break;
+                }
             }
         }
 
         void SensorDepthFrameReady(object sender, DepthImageFrameReadyEventArgs e)
         {
+            if (mainController.Status != MainController.MainStatus.DepthDetecting)
+            {
+                return;
+            }
             using (var depthFrame = e.OpenDepthImageFrame())
             {
                 if (depthFrame == null)
@@ -185,13 +212,9 @@ namespace PPKinecT
                     return;
                 }
 
-                switch (mainController.Status)
-                {
-                    case MainController.MainStatus.DepthDetecting:
-                        // If is stable, the status will be changed to EdgeDetecting
-                        mainController.DoDepthDetecting(sensor, depthFrame);
-                        break;
-                }
+                // If is stable, the status will be changed to EdgeDetecting
+                mainController.DoDepthDetecting(sensor, depthFrame);
+
             }
         }
 
@@ -199,6 +222,18 @@ namespace PPKinecT
         {
             frameRate.Text = "Frame rate: " + frameCount;
             frameCount = 0;
+        }
+
+        public void SetBluePosition(int x, int y)
+        {
+            Canvas.SetLeft(BlueCircle, x);
+            Canvas.SetTop(BlueCircle, y);
+        }
+
+        public void SetYellowPosition(int x, int y)
+        {
+            Canvas.SetLeft(YCircle, x);
+            Canvas.SetTop(YCircle, y);
         }
 #endif
     }

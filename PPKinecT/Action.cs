@@ -38,19 +38,19 @@ namespace PPKinecT
         {
             float maxSimi = 0.0f;
             ActionType maxType = ActionType.NONE;
-            for (int i = leaseCnt; i < joint.Length; ++i)
-            {
+            //for (int i = leaseCnt; i < joint.Length; ++i)
+            //{
                 for (int j = 0; j < 8; ++j)
                 {
                     ActionType type = (ActionType)j;
-                    float simi = Similarity(joint, i, type);
+                    float simi = Similarity(joint, leaseCnt, type);
                     if (simi > maxSimi)
                     {
                         maxSimi = simi;
                         maxType = type;
                     }
                 }
-            }
+            //}
             similarity = maxSimi;
             if (maxSimi > 0.25f)
             {
@@ -71,7 +71,7 @@ namespace PPKinecT
         /// <returns>Similarity from 0 to 1</returns>
         private static float Similarity(Joint[] joint, int lastCnt, ActionType type)
         {
-            if (type == ActionType.NONE)
+            if (type == ActionType.NONE || joint.Length < lastCnt)
             {
                 return 0.0f;
             }

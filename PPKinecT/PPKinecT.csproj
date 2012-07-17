@@ -51,6 +51,8 @@
     <Reference Include="Microsoft.Kinect, Version=1.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL" />
     <Reference Include="System" />
     <Reference Include="System.Data" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml" />
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Core" />
@@ -70,9 +72,18 @@
     </ApplicationDefinition>
     <Compile Include="Action.cs" />
     <Compile Include="KCalibrator.cs" />
+    <Compile Include="MagnifyWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MagnifyWindow.designer.cs">
+      <DependentUpon>MagnifyWindow.cs</DependentUpon>
+    </Compile>
     <Compile Include="MainController.cs" />
     <Compile Include="PPTController.cs" />
+    <Compile Include="SKHook.cs" />
+    <Compile Include="SKPublic.cs" />
     <Compile Include="Vector.cs" />
+    <Compile Include="Win32API.cs" />
     <Page Include="MainWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
@@ -100,6 +111,9 @@
       <DependentUpon>Settings.settings</DependentUpon>
       <DesignTimeSharedInput>True</DesignTimeSharedInput>
     </Compile>
+    <EmbeddedResource Include="MagnifyWindow.resx">
+      <DependentUpon>MagnifyWindow.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="Properties\Resources.resx">
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>Resources.Designer.cs</LastGenOutput>

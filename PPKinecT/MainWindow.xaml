@@ -15,6 +15,12 @@
                     <Ellipse Fill="Green"
                              Height="25" Width="25"
                              Name="RightElbow"></Ellipse>
+                    <Ellipse Fill="Blue"
+                             Height="25" Width="25"
+                             Name="BlueCircle"></Ellipse>
+                    <Ellipse Fill="Yellow"
+                             Height="25" Width="25"
+                             Name="YCircle"></Ellipse>
                     <TextBlock Height="90" TextWrapping="Wrap" 
                                Foreground="Black" Background="White"
                                FontSize="30" Name="textBlock" 
